@@ -1,0 +1,131 @@
+name: Build NullBrowser APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ──
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Setup Java (required by Gradle) ──
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Setup Node.js ──
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 4. Install dependencies ──
+      - name: Install npm dependencies
+        run: npm install
+
+      # ── 5. Setup Android SDK ──
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ── 6. Accept Android SDK licenses ──
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      # ── 7. Initialize Capacitor Android ──
+      - name: Initialize Capacitor Android platform
+        run: |
+          npx cap add android || true
+          npx cap sync android
+
+      # ── 8. Grant Gradle wrapper execute permission ──
+      - name: Grant execute permission for Gradlew
+        run: chmod +x android/gradlew
+
+      # ── 9. Cache Gradle ──
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ── 10. Build Debug APK ──
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # ── 11. Sign Release APK (optional, uses secrets) ──
+      # To enable: add KEYSTORE_BASE64, KEY_PASSWORD, STORE_PASSWORD, KEY_ALIAS
+      # to your GitHub repository Secrets
+      - name: Build Release APK (unsigned)
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      # ── 12. Locate APK files ──
+      - name: Find APK files
+        run: find android -name "*.apk" -type f
+
+      # ── 13. Upload Debug APK as artifact ──
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NullBrowser-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ── 14. Upload Release APK as artifact ──
+      - name: Upload Release APK (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NullBrowser-Release-APK
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ── 15. Create GitHub Release on tag push ──
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: NullBrowser ${{ github.ref_name }}
+          body: |
+            ## 🛡️ NullBrowser ${{ github.ref_name }}
+
+            Mini browser with maximum adblocking for Android.
+
+            ### Features
+            - ✅ EasyList (ads)
+            - ✅ EasyPrivacy (trackers)
+            - ✅ Peter Lowe's adserver list
+            - ✅ Anti-coinminer
+            - ✅ Fanboy Social blocking
+            - ✅ Element hiding (CSS injection)
+            - ✅ Request interception (fetch + XHR)
+
+            ### Download
+            - `app-debug.apk` — debug build, install directly
+            - `app-release-unsigned.apk` — release build (needs signing)
+
+            > **Install tip:** Enable "Unknown sources" in Android settings before installing.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
