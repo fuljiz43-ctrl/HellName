@@ -58,48 +58,89 @@ const Browser = (() => {
     AdBlock.updateUI();
 
     homeScreen.style.display = 'none';
-    webviewDiv.style.cssText = 'display:block; background:#0a0a0f; position:absolute; inset:0;';
+    webviewDiv.style.cssText = 'display:flex; align-items:center; justify-content:center; background:#0a0a0f; position:absolute; inset:0;';
 
     showLoading();
     startProgress();
 
-    // Buat iframe WebView internal (tetap di app, ga keluar)
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.style.cssText = 'width:100%; height:100%; border:none; background:#0a0a0f;';
-    iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads');
-    iframe.setAttribute('allow', 'geolocation; microphone; camera; midi; encrypted-media; autoplay');
-    
-    iframe.onload = () => {
-      hideLoading();
-      setProgress(100);
+    // NATIVE WEBVIEW - Solusi terbaik untuk YouTube, Facebook, dll
+    if (isCapacitor && window.Capacitor?.Plugins?.NativeWebView) {
+      window.Capacitor.Plugins.NativeWebView.open({ url: url })
+        .then(() => {
+          hideLoading();
+          setProgress(100);
+          showToast('✅ Opened in Native WebView');
+        })
+        .catch((err) => {
+          console.error('Native WebView error:', err);
+          showOpenButton(url);
+        });
+    } 
+    // Fallback: Iframe (limited - tidak bisa YouTube/Facebook)
+    else if (!isCapacitor) {
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'width:100%; height:100%; border:none; background:#0a0a0f;';
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads');
+      iframe.setAttribute('allow', 'geolocation; microphone; camera; midi; encrypted-media; autoplay');
       
-      // Inject AdBlock ke dalam iframe jika same-origin
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        if (iframeDoc) {
-          AdBlock.injectIntoIframe(iframeDoc);
-        }
-      } catch(e) {
-        // Cross-origin, ga bisa inject (normal)
-      }
-    };
-    
-    iframe.onerror = () => {
-      // Jika iframe gagal, tampilkan tombol open external
-      showOpenButton(url);
-    };
-    
-    webviewDiv.innerHTML = '';
-    webviewDiv.appendChild(iframe);
-    
-    // Fallback timeout
-    setTimeout(() => {
-      if (!iframe.onload) {
+      let loaded = false;
+      
+      iframe.onload = () => {
+        loaded = true;
         hideLoading();
         setProgress(100);
-      }
-    }, 5000);
+        
+        try {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+          if (iframeDoc) AdBlock.injectIntoIframe(iframeDoc);
+        } catch(e) {}
+      };
+      
+      iframe.onerror = () => showOpenButton(url);
+      
+      webviewDiv.innerHTML = '';
+      webviewDiv.appendChild(iframe);
+      
+      // Detect iframe blocking
+      setTimeout(() => {
+        if (!loaded) {
+          webviewDiv.innerHTML = `
+            <div style="text-align:center;font-family:'JetBrains Mono',monospace;padding:24px;color:#e8e8f0;">
+              <div style="font-size:48px;margin-bottom:16px;">🛡️</div>
+              <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#ff3366;">Iframe Blocked</div>
+              <div style="color:#666680;font-size:12px;margin-bottom:20px;max-width:320px;line-height:1.6;">
+                ${new URL(url).hostname} blocks iframe embedding (X-Frame-Options).
+              </div>
+              <button onclick="window.open('${url.replace(/'/g,"\\'")}','_blank')"
+                style="background:#00ff88;color:#000;border:none;padding:14px 28px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;">
+                🌐 Open in New Tab
+              </button>
+            </div>`;
+          hideLoading();
+          setProgress(100);
+        }
+      }, 3000);
+    }
+    // Native platform tapi plugin belum installed
+    else {
+      webviewDiv.innerHTML = `
+        <div style="text-align:center;font-family:'JetBrains Mono',monospace;padding:24px;color:#e8e8f0;">
+          <div style="font-size:48px;margin-bottom:16px;">⚙️</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#00ff88;">Setup Required</div>
+          <div style="color:#666680;font-size:12px;margin-bottom:20px;max-width:320px;line-height:1.6;">
+            Native WebView plugin not installed.<br><br>
+            Follow instructions in:<br>
+            <code style="color:#00ff88;">NATIVE_WEBVIEW_SETUP.md</code>
+          </div>
+          <button onclick="window.open('${url.replace(/'/g,"\\'")}','_system')"
+            style="background:#00ff88;color:#000;border:none;padding:14px 28px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;">
+            🌐 Open in Browser
+          </button>
+        </div>`;
+      hideLoading();
+      setProgress(100);
+    }
   }
 
   function showOpenButton(url) {
