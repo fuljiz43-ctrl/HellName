@@ -58,22 +58,48 @@ const Browser = (() => {
     AdBlock.updateUI();
 
     homeScreen.style.display = 'none';
-    webviewDiv.style.cssText = 'display:flex; align-items:center; justify-content:center; background:#0a0a0f; position:absolute; inset:0;';
+    webviewDiv.style.cssText = 'display:block; background:#0a0a0f; position:absolute; inset:0;';
 
     showLoading();
     startProgress();
 
-    // Pakai Capacitor Browser plugin (native WebView - bisa buka semua situs)
-    if (isCapacitor && window.Capacitor?.Plugins?.Browser) {
-      window.Capacitor.Plugins.Browser.open({
-        url: url,
-        presentationStyle: 'fullscreen',
-        toolbarColor: '#0a0a0f',
-      }).then(() => { hideLoading(); setProgress(100); })
-        .catch(() => showOpenButton(url));
-    } else {
+    // Buat iframe WebView internal (tetap di app, ga keluar)
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    iframe.style.cssText = 'width:100%; height:100%; border:none; background:#0a0a0f;';
+    iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads');
+    iframe.setAttribute('allow', 'geolocation; microphone; camera; midi; encrypted-media; autoplay');
+    
+    iframe.onload = () => {
+      hideLoading();
+      setProgress(100);
+      
+      // Inject AdBlock ke dalam iframe jika same-origin
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        if (iframeDoc) {
+          AdBlock.injectIntoIframe(iframeDoc);
+        }
+      } catch(e) {
+        // Cross-origin, ga bisa inject (normal)
+      }
+    };
+    
+    iframe.onerror = () => {
+      // Jika iframe gagal, tampilkan tombol open external
       showOpenButton(url);
-    }
+    };
+    
+    webviewDiv.innerHTML = '';
+    webviewDiv.appendChild(iframe);
+    
+    // Fallback timeout
+    setTimeout(() => {
+      if (!iframe.onload) {
+        hideLoading();
+        setProgress(100);
+      }
+    }, 5000);
   }
 
   function showOpenButton(url) {

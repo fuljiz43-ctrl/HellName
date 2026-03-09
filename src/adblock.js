@@ -284,7 +284,7 @@ const AdBlock = (() => {
   }
 
   // ── INJECT ELEMENT HIDING INTO IFRAME ──
-  function injectIntoPage(iframeEl) {
+  function injectIntoIframe(iframeEl) {
     try {
       const doc = iframeEl.contentDocument;
       if (!doc) return;
@@ -391,7 +391,7 @@ const AdBlock = (() => {
   return {
     init,
     shouldBlock,
-    injectIntoPage,
+    injectIntoIframe,
     recordBlock,
     updateUI,
 
